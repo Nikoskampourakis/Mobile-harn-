@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
@@ -71,6 +72,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.ExperimentalMaterial3Api
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.DiffLine
 import com.jarves.mh.model.DiffLineType
@@ -87,6 +91,7 @@ enum class CodeSubTab {
 
 @Composable
 fun CodeWorkspaceTab(
+    activeProject: com.jarves.mh.model.Project?,
     files: List<WorkspaceEntry>,
     loading: Boolean,
     changes: List<ChangeItem>,
@@ -185,6 +190,7 @@ fun CodeWorkspaceTab(
         Box(Modifier.weight(1f)) {
             when (selectedSubTab) {
                 CodeSubTab.TREE -> FileTreeView(
+                    activeProject = activeProject,
                     files = files,
                     loading = loading,
                     changes = changes,
@@ -250,8 +256,10 @@ private fun CodeSubTabChip(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FileTreeView(
+    activeProject: com.jarves.mh.model.Project?,
     files: List<WorkspaceEntry>,
     loading: Boolean,
     changes: List<ChangeItem>,
@@ -261,6 +269,7 @@ private fun FileTreeView(
     onUseSuggestedProjectRoot: () -> Unit,
     onExport: () -> Unit,
 ) {
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var expandedDirectories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     LaunchedEffect(files.map { it.path }) {
         val directories = files.asSequence().filter { it.isDirectory }.map { it.path }.toSet()
@@ -279,7 +288,49 @@ private fun FileTreeView(
 
     val changedPaths = remember(changes) { changes.map { it.path }.toSet() }
 
-    LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    PullToRefreshBox(
+        isRefreshing = loading,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
+            if (activeProject != null) {
+            item(key = "workspace-path-info") {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Folder, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Workspace Guest Path", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "/workspace/${activeProject.slug}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = {
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString("/workspace/${activeProject.slug}"))
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (suggestedProjectRoot != null) {
             item(key = "suggested-project-root") {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {

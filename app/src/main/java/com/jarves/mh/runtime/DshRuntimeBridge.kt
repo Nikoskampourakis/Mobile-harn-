@@ -57,7 +57,15 @@ class DshRuntimeBridge(
     @Volatile private var foregroundResultPosted: Boolean = false
     @Volatile private var lastThinkingUpdateAt: Long = 0L
 
-    override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile): String = withContext(Dispatchers.IO + NonCancellable) {
+    override suspend fun startSession(
+        projectId: String,
+        projectSlug: String,
+        projectKind: ProjectKind,
+        prompt: String,
+        conversationHistory: List<ChatMessage>,
+        provider: ProviderProfile,
+        permissionMode: com.jarves.mh.model.PermissionMode,
+    ): String = withContext(Dispatchers.IO + NonCancellable) {
         val sessionId = UUID.randomUUID().toString()
         finishedSessions.remove(sessionId)
         activeSessionId = sessionId
@@ -692,7 +700,8 @@ internal data class DshCustomRoute(val api: String, val baseUrl: String)
 
 internal object DshRouteMapper {
     fun forProfile(profile: ProviderProfile): DshRoute {
-        val model = profile.model.ifBlank { profile.kind.defaultModel }
+        val rawModel = profile.model.ifBlank { profile.kind.defaultModel }
+        val model = rawModel.removePrefix("models/").trim()
         return when (profile.kind) {
             ProviderKind.DEEPSEEK -> DshRoute(
                 name = "deepseek-official",

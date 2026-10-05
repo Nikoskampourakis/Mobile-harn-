@@ -2,6 +2,7 @@ package com.jarves.mh.ui
 
 import android.Manifest
 import android.app.Activity
+import android.app.Application
 import android.app.ActivityManager
 import android.content.Intent
 import android.content.Context
@@ -19,252 +20,107 @@ import android.webkit.WebChromeClient
 import android.widget.Toast
 import java.io.File
 import androidx.core.content.FileProvider
-import com.jarves.mh.model.defaultDshApiForProvider
+import com.jarves.mh.model.*
+import com.jarves.mh.network.*
+import com.jarves.mh.runtime.*
 import com.jarves.mh.BuildConfig
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.StartOffset
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.*
+import androidx.compose.foundation.text.*
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Android
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudQueue
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.HistoryEdu
-import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.CallSplit
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.rememberDrawerState
-import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.CallSplit
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.BatterySaver
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Preview
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.*
+import androidx.compose.ui.text.*
+import androidx.compose.ui.text.font.*
+import androidx.compose.ui.text.style.*
+import androidx.compose.ui.text.input.*
+import androidx.compose.ui.unit.*
+import androidx.compose.ui.layout.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.jarves.mh.model.ActionKind
-import com.jarves.mh.model.ActivityItem
-import com.jarves.mh.model.AgentKind
-import com.jarves.mh.model.ChangeItem
-import com.jarves.mh.model.ChatMessage
-import com.jarves.mh.model.ChatAttachment
-import com.jarves.mh.model.DevStack
-import com.jarves.mh.model.DEEPSEEK_HARNESS_PROVIDERS
-import com.jarves.mh.model.DSH_PROTOCOL_PROVIDERS
-import com.jarves.mh.model.DiffLine
-import com.jarves.mh.model.DiffLineType
-import com.jarves.mh.model.Project
-import com.jarves.mh.model.ProjectKind
-import com.jarves.mh.model.ProjectChat
-import com.jarves.mh.model.ProviderKind
-import com.jarves.mh.model.ProviderProfile
-import com.jarves.mh.model.inferredDshApiForUrl
-import com.jarves.mh.model.providersForAgent
-import com.jarves.mh.model.ToolRequest
-import com.jarves.mh.model.WorkspaceEntry
-import com.jarves.mh.model.projectSlug
-import com.jarves.mh.runtime.RuntimeExecutionService
-import com.jarves.mh.runtime.RuntimeSetupService
-import com.jarves.mh.runtime.supportsArm64Runtime
-import com.jarves.mh.runtime.AntigravityAuthStatus
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import com.jarves.mh.network.ConnectionValidation
-import com.jarves.mh.network.DiscoveredModel
-import com.jarves.mh.network.ModelDiscoveryResult
-import com.jarves.mh.network.GitHubRepository
-import com.jarves.mh.ui.theme.PocketBlue
-import com.jarves.mh.ui.theme.PocketGreen
+import com.jarves.mh.ui.theme.AppThemeMode
+import com.jarves.mh.ui.theme.AppColorTheme
 import com.jarves.mh.ui.theme.PocketOrange
-import java.io.ByteArrayInputStream
+import com.jarves.mh.ui.theme.PocketGreen
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
 
+private val AVAILABLE_PROJECT_ICONS = listOf(
+    "Folder", "Code", "Terminal", "Build", "Dashboard", "Construction", "Smartphone", "Web", "Settings", "Description",
+    "Analytics", "Storage", "Memory", "BugReport", "Extension", "IntegrationInstructions", "AutoAwesome", "Cloud", "Router", "Security"
+)
+private val AVAILABLE_CHAT_ICONS = listOf(
+    "Chat", "Psychology", "School", "Bolt", "AutoAwesome", "Public", "BugReport", "History", "Label", "Person",
+    "Face", "Science", "Rocket", "TipsAndUpdates", "Lightbulb", "ElectricBolt", "Diamond", "HotelClass", "Favorite"
+)
 
-import com.jarves.mh.ui.theme.AppThemeMode
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material3.ExtendedFloatingActionButton
+private fun iconFromName(name: String?, default: ImageVector = Icons.Default.Folder): ImageVector {
+    return when (name) {
+        "Folder" -> Icons.Default.Folder
+        "Code" -> Icons.Default.Code
+        "Terminal" -> Icons.Default.Terminal
+        "Build" -> Icons.Default.Build
+        "Dashboard" -> Icons.Default.Dashboard
+        "Construction" -> Icons.Default.Construction
+        "Smartphone" -> Icons.Default.Smartphone
+        "Web" -> Icons.Default.Web
+        "Settings" -> Icons.Default.Settings
+        "Description" -> Icons.Default.Description
+        "Analytics" -> Icons.Default.Analytics
+        "Storage" -> Icons.Default.Storage
+        "Memory" -> Icons.Default.Memory
+        "BugReport" -> Icons.Default.BugReport
+        "Extension" -> Icons.Default.Extension
+        "IntegrationInstructions" -> Icons.Default.IntegrationInstructions
+        "AutoAwesome" -> Icons.Default.AutoAwesome
+        "Cloud" -> Icons.Default.Cloud
+        "Router" -> Icons.Default.Router
+        "Security" -> Icons.Default.Security
+        "Chat" -> Icons.Default.Chat
+        "Psychology" -> Icons.Default.Psychology
+        "School" -> Icons.Default.School
+        "Bolt" -> Icons.Default.Bolt
+        "Public" -> Icons.Default.Public
+        "History" -> Icons.Default.History
+        "Label" -> Icons.Default.Label
+        "Person" -> Icons.Default.Person
+        "Face" -> Icons.Default.Face
+        "Science" -> Icons.Default.Science
+        "Rocket" -> Icons.Default.Rocket
+        "TipsAndUpdates" -> Icons.Default.TipsAndUpdates
+        "Lightbulb" -> Icons.Default.Lightbulb
+        "Flashlight" -> Icons.Default.Bolt
+        "ElectricBolt" -> Icons.Default.ElectricBolt
+        "Diamond" -> Icons.Default.Diamond
+        "HotelClass" -> Icons.Default.HotelClass
+        "Favorite" -> Icons.Default.Favorite
+        else -> default
+    }
+}
 
 private enum class RootScreen(val label: String, val icon: ImageVector) {
     PROJECTS("Projects", Icons.Default.Folder),
@@ -277,6 +133,554 @@ private enum class WorkspaceTab(val icon: ImageVector) {
     FILES(Icons.Default.Code),
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CustomizeDialog(
+    initialName: String,
+    initialIcon: String?,
+    isChat: Boolean,
+    onSave: (String, String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(initialName) }
+    var selectedIcon by remember { mutableStateOf(initialIcon) }
+    val icons = if (isChat) AVAILABLE_CHAT_ICONS else AVAILABLE_PROJECT_ICONS
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isChat) "Customize Chat" else "Customize Project") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Text("Icon", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Default icon
+                    CustomIconChip(
+                        icon = null,
+                        selected = selectedIcon == null,
+                        onClick = { selectedIcon = null },
+                        defaultIcon = if (isChat) Icons.Default.ChatBubble else Icons.Default.Folder
+                    )
+                    
+                    icons.forEach { iconName ->
+                        CustomIconChip(
+                            icon = iconName,
+                            selected = selectedIcon == iconName,
+                            onClick = { selectedIcon = iconName }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(name, selectedIcon); onDismiss() },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun CustomIconChip(
+    icon: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    defaultIcon: ImageVector = Icons.Default.Folder
+) {
+    Surface(
+        shape = CircleShape,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = Modifier
+            .size(40.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = iconFromName(icon, defaultIcon),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private sealed class CustomizeTarget {
+    data class Project(val projectId: String) : CustomizeTarget()
+    data class Chat(val projectId: String, val chatId: String) : CustomizeTarget()
+}
+
+private fun openFolderInFileManager(context: Context, project: Project) {
+    val workspace = File(context.filesDir, "workspaces/${project.id}")
+    if (!workspace.exists()) workspace.mkdirs()
+    try {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            workspace
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "resource/folder")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val chooser = Intent.createChooser(intent, "Open in File Explorer")
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
+    } catch (e: Exception) {
+        val filesIntent = context.packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
+            ?: context.packageManager.getLaunchIntentForPackage("com.android.documentsui")
+        if (filesIntent != null) {
+            filesIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(filesIntent)
+        } else {
+            Toast.makeText(context, "Workspace path: ${workspace.absolutePath}", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+@Composable
+private fun ProjectPathDialog(
+    project: Project,
+    onDismiss: () -> Unit,
+    onOpenFolder: (() -> Unit)? = null,
+    onSyncFolder: (() -> Unit)? = null,
+) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val guestPath = "/workspace/${project.slug}"
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("Project Folder") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (project.externalFolderPath != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Column {
+                                Text("Live Folder Environment", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("Edits made by AI can be synced directly back to this folder.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                            }
+                        }
+                    }
+                }
+
+                Text("Guest Environment Path:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        guestPath,
+                        modifier = Modifier.padding(12.dp),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp
+                    )
+                }
+
+                Text(
+                    "Internal Path:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Text(
+                    project.rootPath.ifBlank { File(context.filesDir, "workspaces/${project.id}").absolutePath },
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+
+                Spacer(Modifier.height(4.dp))
+                Button(
+                    onClick = {
+                        openFolderInFileManager(context, project)
+                        onOpenFolder?.invoke()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Open in Default File Explorer")
+                }
+
+                if (project.externalFolderPath != null && onSyncFolder != null) {
+                    OutlinedButton(
+                        onClick = onSyncFolder,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sync AI Changes to Device Folder")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                clipboard.setText(AnnotatedString(guestPath))
+                Toast.makeText(context, "Path copied!", Toast.LENGTH_SHORT).show()
+                onDismiss()
+            }) {
+                Text("Copy Path")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ProjectShareDialog(
+    project: Project,
+    shareServerState: ShareServerState,
+    onStartSharing: () -> Unit,
+    onStopSharing: () -> Unit,
+    onRegenerateCode: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Share, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("Auto-Hostable Project Link") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Share this project over your local network or hotspot with on-device hosting. Secured by a randomized access code.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Surface(
+                    color = if (shareServerState.isRunning) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column {
+                            Text(
+                                if (shareServerState.isRunning) "Server Active" else "Server Inactive",
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (shareServerState.isRunning) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (shareServerState.isRunning && shareServerState.activeVisitors > 0) {
+                                Text(
+                                    "${shareServerState.activeVisitors} active visitor(s)",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = shareServerState.isRunning,
+                            onCheckedChange = { checked ->
+                                if (checked) onStartSharing() else onStopSharing()
+                            },
+                        )
+                    }
+                }
+
+                if (shareServerState.isRunning) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Share Link:", style = MaterialTheme.typography.labelMedium)
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    shareServerState.localUrl.ifBlank { "http://localhost:${shareServerState.localPort}" },
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                IconButton(
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(shareServerState.localUrl))
+                                        Toast.makeText(context, "Link copied!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, "Copy link", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Randomized Shared Code:", style = MaterialTheme.typography.labelMedium)
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    shareServerState.passCode,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Row {
+                                    IconButton(
+                                        onClick = onRegenerateCode,
+                                        modifier = Modifier.size(28.dp),
+                                    ) {
+                                        Icon(Icons.Default.Refresh, "Regenerate code", modifier = Modifier.size(16.dp))
+                                    }
+                                    Spacer(Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = {
+                                            clipboard.setText(AnnotatedString(shareServerState.passCode))
+                                            Toast.makeText(context, "Code copied!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(28.dp),
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, "Copy code", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (shareServerState.isRunning) {
+                Button(onClick = {
+                    val shareText = "Project: ${project.name}\nLink: ${shareServerState.localUrl}\nPasscode: ${shareServerState.passCode}"
+                    clipboard.setText(AnnotatedString(shareText))
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                        type = "text/plain"
+                    }
+                    context.startActivity(Intent.createChooser(sendIntent, "Share Project Link"))
+                }) {
+                    Text("Share Info")
+                }
+            } else {
+                Button(onClick = onStartSharing) {
+                    Text("Start Server")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+private fun PermissionModeDialog(
+    currentMode: PermissionMode,
+    onSelectMode: (PermissionMode) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("Permissions System") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Choose how tools, commands, and file edits are approved:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                PermissionMode.entries.forEach { mode ->
+                    val selected = mode == currentMode
+                    Surface(
+                        onClick = {
+                            onSelectMode(mode)
+                            onDismiss()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = if (selected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = {
+                                    onSelectMode(mode)
+                                    onDismiss()
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(mode.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text(
+                                    mode.description,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ExecutionPlanCard(
+    plan: ExecutionPlan,
+    onApprove: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Assignment, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(plan.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+                if (plan.isApproved) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Text(
+                            "Approved",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+
+            if (plan.summary.isNotBlank()) {
+                Text(plan.summary, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                plan.steps.forEach { step ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = when {
+                                step.isComplete -> Icons.Default.CheckCircle
+                                step.inProgress -> Icons.Default.Pending
+                                else -> Icons.Default.RadioButtonUnchecked
+                            },
+                            contentDescription = null,
+                            tint = when {
+                                step.isComplete -> MaterialTheme.colorScheme.primary
+                                step.inProgress -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.outline
+                            },
+                            modifier = Modifier.size(18.dp).padding(top = 2.dp),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "${step.index + 1}. ${step.title}",
+                                fontSize = 13.sp,
+                                fontWeight = if (step.inProgress) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            if (step.description.isNotBlank()) {
+                                Text(step.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!plan.isApproved) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onCancel) {
+                        Text("Cancel")
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = onApprove) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Approve Plan")
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AppDrawerContent(
     state: AppUiState,
@@ -285,7 +689,56 @@ private fun AppDrawerContent(
     onCreateProject: () -> Unit,
     onCreateChat: () -> Unit,
     onNavigate: (RootScreen) -> Unit,
+    onRenameProject: (String, String) -> Unit,
+    onUpdateProjectIcon: (String, String?) -> Unit,
+    onRenameChat: (String, String, String) -> Unit,
+    onUpdateChatIcon: (String, String, String?) -> Unit,
+    onOpenProjectFiles: (Project) -> Unit,
 ) {
+    var customizeTarget by remember { mutableStateOf<CustomizeTarget?>(null) }
+    var projectPathTarget by remember { mutableStateOf<Project?>(null) }
+    
+    if (customizeTarget != null) {
+        val target = customizeTarget!!
+        val result = when (target) {
+            is CustomizeTarget.Project -> {
+                val p = state.projects.firstOrNull { it.id == target.projectId }
+                if (p != null) Triple(p.name, p.icon, false) else null
+            }
+            is CustomizeTarget.Chat -> {
+                val c = state.projectChats.firstOrNull { it.id == target.chatId }
+                if (c != null) Triple(c.title, c.icon, true) else null
+            }
+        }
+        
+        if (result != null) {
+            val (initialName, initialIcon, isChat) = result
+            CustomizeDialog(
+                initialName = initialName,
+                initialIcon = initialIcon,
+                isChat = isChat,
+                onSave = { newName, newIcon ->
+                    when (target) {
+                        is CustomizeTarget.Project -> {
+                            onRenameProject(target.projectId, newName)
+                            onUpdateProjectIcon(target.projectId, newIcon)
+                        }
+                        is CustomizeTarget.Chat -> {
+                            onRenameChat(state.activeProject?.id ?: "", target.chatId, newName)
+                            onUpdateChatIcon(state.activeProject?.id ?: "", target.chatId, newIcon)
+                        }
+                    }
+                    customizeTarget = null
+                },
+                onDismiss = { customizeTarget = null }
+            )
+        }
+    }
+
+    if (projectPathTarget != null) {
+        ProjectPathDialog(project = projectPathTarget!!, onDismiss = { projectPathTarget = null })
+    }
+
     Column(
         modifier = Modifier
             .fillMaxHeight()
@@ -335,10 +788,22 @@ private fun AppDrawerContent(
             LazyColumn(modifier = Modifier.weight(0.4f)) {
                 items(state.projectChats) { chat ->
                     NavigationDrawerItem(
-                        label = { Text(chat.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(chat.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                IconButton(
+                                    onClick = {
+                                        customizeTarget = CustomizeTarget.Chat(state.activeProject?.id ?: "", chat.id)
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(Icons.Default.Palette, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                                }
+                            }
+                        },
                         selected = chat.id == state.activeChatId,
                         onClick = { onSwitchChat(chat.id) },
-                        icon = { Icon(Icons.Default.ChatBubble, null, modifier = Modifier.size(18.dp)) },
+                        icon = { Icon(iconFromName(chat.icon, Icons.Default.ChatBubble), null, modifier = Modifier.size(18.dp)) },
                         colors = NavigationDrawerItemDefaults.colors(
                             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                             selectedIconColor = MaterialTheme.colorScheme.primary,
@@ -357,10 +822,30 @@ private fun AppDrawerContent(
         LazyColumn(modifier = Modifier.weight(0.6f)) {
             items(state.projects) { project ->
                 NavigationDrawerItem(
-                    label = { Text(project.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(project.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            IconButton(
+                                onClick = {
+                                    projectPathTarget = project
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                            }
+                            IconButton(
+                                onClick = {
+                                    customizeTarget = CustomizeTarget.Project(project.id)
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Palette, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                            }
+                        }
+                    },
                     selected = project.id == state.activeProject?.id,
                     onClick = { onSwitchProject(project) },
-                    icon = { Icon(Icons.Default.Folder, null, modifier = Modifier.size(18.dp)) },
+                    icon = { Icon(iconFromName(project.icon, Icons.Default.Folder), null, modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(vertical = 2.dp)
                 )
             }
@@ -387,6 +872,96 @@ private fun AppDrawerContent(
             onClick = { onNavigate(RootScreen.SETTINGS) },
             icon = { Icon(Icons.Default.Settings, null) }
         )
+    }
+}
+
+private sealed class IconPickerTarget {
+    data class Project(val projectId: String) : IconPickerTarget()
+    data class Chat(val projectId: String, val chatId: String) : IconPickerTarget()
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun IconPickerSheet(
+    target: IconPickerTarget,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val icons = when (target) {
+        is IconPickerTarget.Project -> AVAILABLE_PROJECT_ICONS
+        is IconPickerTarget.Chat -> AVAILABLE_CHAT_ICONS
+    }
+    
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "Choose Icon",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 20.dp)
+            )
+            
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Default icon option
+                IconOption(
+                    icon = null,
+                    label = "Default",
+                    onClick = { onSelect(null) },
+                    defaultIcon = if (target is IconPickerTarget.Project) Icons.Default.Folder else Icons.Default.ChatBubble
+                )
+                
+                icons.forEach { iconName ->
+                    IconOption(
+                        icon = iconName,
+                        label = iconName,
+                        onClick = { onSelect(iconName) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IconOption(
+    icon: String?,
+    label: String,
+    onClick: () -> Unit,
+    defaultIcon: ImageVector = Icons.Default.Folder
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = iconFromName(icon, defaultIcon),
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -439,6 +1014,14 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
                         if (state.activeProject != null) {
                             viewModel.closeProject()
                         }
+                    },
+                    onRenameProject = viewModel::renameProject,
+                    onUpdateProjectIcon = viewModel::updateProjectIcon,
+                    onRenameChat = viewModel::renameChat,
+                    onUpdateChatIcon = viewModel::updateChatIcon,
+                    onOpenProjectFiles = { project ->
+                        scope.launch { drawerState.close() }
+                        viewModel.openProject(project)
                     }
                 )
             }
@@ -560,6 +1143,18 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onEditMessage = viewModel::editPastMessage,
             onRestoreCheckpoint = viewModel::restoreMessageCheckpoint,
             onOpenDrawer = { scope.launch { drawerState.open() } },
+            onRenameProject = viewModel::renameProject,
+            onUpdateProjectIcon = viewModel::updateProjectIcon,
+            onRenameChat = viewModel::renameChat,
+            onUpdateChatIcon = viewModel::updateChatIcon,
+            onRefreshWorkspace = viewModel::refreshActiveWorkspace,
+            onApprovePlan = viewModel::approvePlan,
+            onCancelPlan = viewModel::cancelPlan,
+            onUpdatePermissionMode = { mode -> state.activeProject?.let { viewModel.updateProjectPermissionMode(it.id, mode) } },
+            onStartProjectSharing = { state.activeProject?.let { viewModel.startProjectSharing(it.id) } },
+            onStopProjectSharing = viewModel::stopProjectSharing,
+            onRegenerateShareCode = viewModel::regenerateShareCode,
+            onSyncWorkspaceToExternalFolder = { ctx, proj -> viewModel.syncWorkspaceToExternalFolder(ctx, proj) },
         )
         else -> RootScreenHost(
             state,
@@ -2251,6 +2846,7 @@ private fun RootScreenHost(
     val isTerminalRunning by viewModel.isTerminalRunning.collectAsStateWithLifecycle()
     val terminalLiveOutput by viewModel.terminalLiveOutput.collectAsStateWithLifecycle()
     val terminalCurrentCommand by viewModel.terminalCurrentCommand.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -2299,6 +2895,7 @@ private fun RootScreenHost(
                     onPing = viewModel::pingApi,
                     onToggleTheme = viewModel::toggleTheme,
                     onInstallUpdate = viewModel::installAppUpdate,
+                    onOpenDeviceFolder = { uri -> viewModel.createProjectFromExternalFolder(uri, context) },
                 )
                 RootScreen.AGENT -> AgentScreen(
                     state = state,
@@ -3337,6 +3934,7 @@ private fun ProjectsScreen(
     onPing: () -> Unit,
     onToggleTheme: () -> Unit,
     onInstallUpdate: () -> Unit,
+    onOpenDeviceFolder: (Uri) -> Unit = {},
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -3353,6 +3951,9 @@ private fun ProjectsScreen(
     }
     val importZipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) onImportZip(uri)
+    }
+    val openFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) onOpenDeviceFolder(uri)
     }
     LaunchedEffect(state.appUpdate?.versionCode) {
         if (state.appUpdate != null) showUpdateDialog = true
@@ -3460,7 +4061,15 @@ private fun ProjectsScreen(
                                     .padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    ImportSourceButton(
+                                        icon = Icons.Default.FolderOpen,
+                                        title = "Folder",
+                                        enabled = !state.projectImporting && !state.gitCloneRunning,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { openFolderLauncher.launch(null) },
+                                        loading = false,
+                                    )
                                     ImportSourceButton(
                                         icon = Icons.Default.Download,
                                         title = if (state.projectImporting) "Importing…" else "ZIP file",
@@ -3851,7 +4460,7 @@ private fun ProjectCard(
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Icon(Icons.Default.Folder, null, Modifier.padding(13.dp), tint = PocketOrange)
+                Icon(iconFromName(project.icon, Icons.Default.Folder), null, Modifier.padding(13.dp), tint = PocketOrange)
             }
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
@@ -4051,9 +4660,95 @@ private fun WorkspaceScreen(
     onEditMessage: (String, String) -> Unit = { _, _ -> },
     onRestoreCheckpoint: (String) -> Unit = {},
     onOpenDrawer: () -> Unit = {},
+    onRenameProject: (String, String) -> Unit = { _, _ -> },
+    onUpdateProjectIcon: (String, String?) -> Unit = { _, _ -> },
+    onRenameChat: (String, String, String) -> Unit = { _, _, _ -> },
+    onUpdateChatIcon: (String, String, String?) -> Unit = { _, _, _ -> },
+    onRefreshWorkspace: () -> Unit = onRefreshFiles,
+    onApprovePlan: () -> Unit = {},
+    onCancelPlan: () -> Unit = {},
+    onUpdatePermissionMode: (PermissionMode) -> Unit = {},
+    onStartProjectSharing: () -> Unit = {},
+    onStopProjectSharing: () -> Unit = {},
+    onRegenerateShareCode: () -> Unit = {},
+    onSyncWorkspaceToExternalFolder: (Context, Project) -> Unit = { _, _ -> },
 ) {
-    BackHandler(onBack = onBack)
+    var customizeTarget by remember { mutableStateOf<CustomizeTarget?>(null) }
+    var projectPathTarget by remember { mutableStateOf<Project?>(null) }
+    var showPermissionsDialog by rememberSaveable { mutableStateOf(false) }
+    var showShareDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (customizeTarget != null) {
+        val target = customizeTarget!!
+        val result = when (target) {
+            is CustomizeTarget.Project -> {
+                val p = state.activeProject
+                if (p != null) Triple(p.name, p.icon, false) else null
+            }
+            is CustomizeTarget.Chat -> {
+                val c = state.projectChats.firstOrNull { it.id == target.chatId }
+                if (c != null) Triple(c.title, c.icon, true) else null
+            }
+        }
+        
+        if (result != null) {
+            val (initialName, initialIcon, isChat) = result
+            CustomizeDialog(
+                initialName = initialName,
+                initialIcon = initialIcon,
+                isChat = isChat,
+                onSave = { newName, newIcon ->
+                    when (target) {
+                        is CustomizeTarget.Project -> {
+                            onRenameProject(target.projectId, newName)
+                            onUpdateProjectIcon(target.projectId, newIcon)
+                        }
+                        is CustomizeTarget.Chat -> {
+                            onRenameChat(state.activeProject?.id ?: "", target.chatId, newName)
+                            onUpdateChatIcon(state.activeProject?.id ?: "", target.chatId, newIcon)
+                        }
+                    }
+                    customizeTarget = null
+                },
+                onDismiss = { customizeTarget = null }
+            )
+        }
+    }
+    
     val context = LocalContext.current
+    if (projectPathTarget != null) {
+        ProjectPathDialog(
+            project = projectPathTarget!!,
+            onDismiss = { projectPathTarget = null },
+            onOpenFolder = { projectPathTarget = null },
+            onSyncFolder = {
+                onSyncWorkspaceToExternalFolder(context, projectPathTarget!!)
+                Toast.makeText(context, "Syncing changes to device folder…", Toast.LENGTH_SHORT).show()
+                projectPathTarget = null
+            },
+        )
+    }
+
+    if (showPermissionsDialog) {
+        PermissionModeDialog(
+            currentMode = state.activeProject?.permissionMode ?: PermissionMode.WAIT_FOR_APPROVAL,
+            onSelectMode = onUpdatePermissionMode,
+            onDismiss = { showPermissionsDialog = false },
+        )
+    }
+
+    if (showShareDialog && state.activeProject != null) {
+        ProjectShareDialog(
+            project = state.activeProject!!,
+            shareServerState = state.shareServerState,
+            onStartSharing = onStartProjectSharing,
+            onStopSharing = onStopProjectSharing,
+            onRegenerateCode = onRegenerateShareCode,
+            onDismiss = { showShareDialog = false },
+        )
+    }
+
+    BackHandler(onBack = onBack)
     val isAndroidProject = state.androidProjectDetected
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     var showModelSwitcher by rememberSaveable { mutableStateOf(false) }
@@ -4278,34 +4973,91 @@ private fun WorkspaceScreen(
                 // 2 Extra buttons for Refresh, Fork, Share, Settings
                 NavigationBarItem(
                     selected = false,
-                    onClick = { onRefreshFiles() },
-                    icon = { Icon(Icons.Default.Refresh, "Refresh") },
+                    onClick = { onRefreshWorkspace() },
+                    icon = {
+                        if (state.isRefreshing) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, "Refresh")
+                        }
+                    },
                     label = null,
                 )
 
-                var showMoreMenu by remember { mutableStateOf(false) }
+                var showMoreMenuInside by remember { mutableStateOf(false) }
                 NavigationBarItem(
                     selected = false,
-                    onClick = { showMoreMenu = true },
+                    onClick = { showMoreMenuInside = true },
                     icon = {
                         Box {
                             Icon(Icons.Default.MoreVert, "More")
                             DropdownMenu(
-                                expanded = showMoreMenu,
-                                onDismissRequest = { showMoreMenu = false }
+                                expanded = showMoreMenuInside,
+                                onDismissRequest = { showMoreMenuInside = false }
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text("Permissions (${state.activeProject?.permissionMode?.title?.take(16) ?: "Approval"})") },
+                                    onClick = {
+                                        showMoreMenuInside = false
+                                        showPermissionsDialog = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Security, null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (state.shareServerState.isRunning) "Share Link (Active)" else "Share via Live Link") },
+                                    onClick = {
+                                        showMoreMenuInside = false
+                                        showShareDialog = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Link, null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Open in File Explorer") },
+                                    onClick = {
+                                        showMoreMenuInside = false
+                                        state.activeProject?.let { openFolderInFileManager(context, it) }
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Launch, null) }
+                                )
+                                if (state.activeProject?.externalFolderPath != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Sync to Device Folder") },
+                                        onClick = {
+                                            showMoreMenuInside = false
+                                            state.activeProject?.let { onSyncWorkspaceToExternalFolder(context, it) }
+                                            Toast.makeText(context, "Syncing changes to device folder…", Toast.LENGTH_SHORT).show()
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Sync, null) }
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("Fork Chat") },
                                     onClick = {
-                                        showMoreMenu = false
+                                        showMoreMenuInside = false
                                         onForkChat(null)
                                     },
                                     leadingIcon = { Icon(Icons.Default.CallSplit, null) }
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("Customize Chat") },
+                                    onClick = {
+                                        showMoreMenuInside = false
+                                        customizeTarget = CustomizeTarget.Chat(state.activeProject?.id ?: "", state.activeChatId ?: "")
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Palette, null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Project Folder") },
+                                    onClick = {
+                                        showMoreMenuInside = false
+                                        projectPathTarget = state.activeProject
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Export Project") },
                                     onClick = {
-                                        showMoreMenu = false
+                                        showMoreMenuInside = false
                                         exportProjectLauncher.launch("${state.activeProject?.slug ?: "project"}.zip")
                                     },
                                     leadingIcon = { Icon(Icons.Default.Share, null) }
@@ -4313,8 +5065,8 @@ private fun WorkspaceScreen(
                                 DropdownMenuItem(
                                     text = { Text("Settings") },
                                     onClick = {
-                                        showMoreMenu = false
-                                        onOpenDrawer() // Or specific settings dialog
+                                        showMoreMenuInside = false
+                                        onOpenDrawer()
                                     },
                                     leadingIcon = { Icon(Icons.Default.Settings, null) }
                                 )
@@ -4327,6 +5079,9 @@ private fun WorkspaceScreen(
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
+            if (state.isRefreshing) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
             when (selectedTab) {
                 WorkspaceTab.CHAT -> ChatTab(
                     state.messages,
@@ -4370,8 +5125,12 @@ private fun WorkspaceScreen(
                     onForkChat = onForkChat,
                     onEditMessage = onEditMessage,
                     onRestoreCheckpoint = onRestoreCheckpoint,
+                    activePlan = state.activePlan,
+                    onApprovePlan = onApprovePlan,
+                    onCancelPlan = onCancelPlan,
                 )
                 WorkspaceTab.FILES -> com.jarves.mh.ui.CodeWorkspaceTab(
+                    activeProject = state.activeProject,
                     files = state.workspaceFiles,
                     loading = state.filesLoading,
                     changes = state.changes,
@@ -4796,6 +5555,9 @@ private fun ChatTab(
     onForkChat: (String?) -> Unit = {},
     onEditMessage: (String, String) -> Unit = { _, _ -> },
     onRestoreCheckpoint: (String) -> Unit = {},
+    activePlan: ExecutionPlan? = null,
+    onApprovePlan: (() -> Unit)? = null,
+    onCancelPlan: (() -> Unit)? = null,
 ) {
     val view = LocalView.current
     val context = LocalContext.current
@@ -4901,6 +5663,15 @@ private fun ChatTab(
                     }
                 }
                 approval?.let { request -> item { ApprovalCard(request, onApproval) } }
+                activePlan?.let { plan ->
+                    item(key = "active-execution-plan") {
+                        ExecutionPlanCard(
+                            plan = plan,
+                            onApprove = onApprovePlan ?: {},
+                            onCancel = onCancelPlan ?: {},
+                        )
+                    }
+                }
             }
             if (!readerAtBottom) {
                 Surface(

@@ -62,6 +62,17 @@ class ProviderApiClient {
                 response.error != null -> lastMessage = response.error
             }
         }
+        if (baseUrl.contains("generativelanguage.googleapis.com")) {
+            val defaultGeminiModels = listOf(
+                DiscoveredModel("gemini-2.5-flash", "Gemini 2.5 Flash", true),
+                DiscoveredModel("gemini-2.5-pro", "Gemini 2.5 Pro", false),
+                DiscoveredModel("gemini-2.0-flash", "Gemini 2.0 Flash", true),
+                DiscoveredModel("gemini-2.0-flash-thinking-exp", "Gemini 2.0 Flash Thinking", true),
+                DiscoveredModel("gemini-1.5-flash", "Gemini 1.5 Flash", true),
+                DiscoveredModel("gemini-1.5-pro", "Gemini 1.5 Pro", false),
+            )
+            return@withContext ModelDiscoveryResult.Success(defaultGeminiModels, baseUrl)
+        }
         ModelDiscoveryResult.Failure(
             if (authError) "Check the saved API key, then try refreshing again." else lastMessage,
             lastProviderMessage,
@@ -146,7 +157,12 @@ class ProviderApiClient {
         readTimeoutMs: Int = 20_000,
     ): HttpResult {
         return runCatching {
-            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            val targetUrl = if (endpoint.contains("generativelanguage.googleapis.com") && apiKey.isNotBlank() && !endpoint.contains("key=")) {
+                if (endpoint.contains("?")) "$endpoint&key=$apiKey" else "$endpoint?key=$apiKey"
+            } else {
+                endpoint
+            }
+            val connection = (URL(targetUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 connectTimeout = connectTimeoutMs
                 readTimeout = readTimeoutMs
@@ -154,6 +170,7 @@ class ProviderApiClient {
                 setRequestProperty("Content-Type", "application/json")
                 if (apiKey.isNotBlank()) {
                     setRequestProperty("Authorization", "Bearer $apiKey")
+                    setRequestProperty("x-goog-api-key", apiKey)
                 }
                 if (endpoint.startsWith("https://opencode.ai/zen/")) {
                     // OpenCode Zen expects requests to identify the OpenCode client and session.
@@ -169,7 +186,11 @@ class ProviderApiClient {
             if (body != null) connection.outputStream.use { it.write(body.toByteArray()) }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            var responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (responseBody.isBlank() && code !in 200..299) {
+                val msg = connection.responseMessage
+                responseBody = if (!msg.isNullOrBlank()) "HTTP $code: $msg" else "HTTP $code"
+            }
             connection.disconnect()
             HttpResult(code, responseBody)
         }.getOrElse { HttpResult(0, "", it.message ?: "Network connection failed",) }
@@ -178,9 +199,15 @@ class ProviderApiClient {
     private fun modelEndpoints(baseUrl: String, protocol: ProviderProtocol): List<String> {
         val base = baseUrl.trim().trimEnd('/')
         val withoutAnthropic = base.removeSuffix("/anthropic")
-        val candidates = when (protocol) {
-            ProviderProtocol.OPENROUTER -> listOf("$base/v1/models")
-            ProviderProtocol.OPENAI_CHAT, ProviderProtocol.OPENAI_RESPONSES -> listOf("$base/models")
+        val withoutOpenAi = base.removeSuffix("/openai")
+        val candidates = when {
+            base.contains("generativelanguage.googleapis.com") -> listOf(
+                "$withoutOpenAi/models",
+                "$base/models",
+                "$base/v1beta/models",
+            )
+            protocol == ProviderProtocol.OPENROUTER -> listOf("$base/v1/models")
+            protocol == ProviderProtocol.OPENAI_CHAT || protocol == ProviderProtocol.OPENAI_RESPONSES -> listOf("$base/models", "$base/v1/models")
             else -> listOf("$base/v1/models", "$base/models", "$withoutAnthropic/models", "$withoutAnthropic/v1/models")
         }
         return candidates.distinct()
@@ -298,9 +325,11 @@ object ModelResponseParser {
                 when (val item = array.opt(index)) {
                     is String -> add(DiscoveredModel(item))
                     is JSONObject -> {
-                        val id = item.optString("id").ifBlank { item.optString("name") }
+                        val rawId = item.optString("id").ifBlank { item.optString("name") }
+                        val id = rawId.removePrefix("models/")
                         if (id.isNotBlank()) {
-                            val label = item.optString("display_name").ifBlank { item.optString("displayName") }.ifBlank { id }
+                            val rawLabel = item.optString("display_name").ifBlank { item.optString("displayName") }.ifBlank { id }
+                            val label = rawLabel.removePrefix("models/")
                             val pricing = item.optJSONObject("pricing")
                             val free = id.endsWith(":free", ignoreCase = true) || pricing?.let {
                                 listOf("prompt", "completion", "request").all { field ->

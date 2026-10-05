@@ -1595,6 +1595,14 @@ class RuntimeInstaller(private val context: Context) {
             add("${bridge.absolutePath}:/pocket-bridge")
             add("-w")
             add(guestWorkspacePath)
+            // Guest binaries must not inherit host LD_LIBRARY_PATH or LD_PRELOAD,
+            // as they would attempt to load Android's Bionic libraries instead of
+            // guest glibc libraries and crash immediately.
+            add("/usr/bin/env")
+            add("-u")
+            add("LD_LIBRARY_PATH")
+            add("-u")
+            add("LD_PRELOAD")
             addAll(guestCommand)
         }
         val prootTemp = File(context.cacheDir, "proot-tmp").apply { mkdirs() }

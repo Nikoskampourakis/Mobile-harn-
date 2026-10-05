@@ -1,6 +1,7 @@
 package com.jarves.mh.ui
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -30,6 +31,11 @@ import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.model.RuntimeEvent
 import com.jarves.mh.model.ToolRequest
 import com.jarves.mh.model.WorkspaceEntry
+import com.jarves.mh.model.PermissionMode
+import com.jarves.mh.model.ExecutionPlan
+import com.jarves.mh.model.PlanStep
+import com.jarves.mh.network.ShareServerState
+import com.jarves.mh.network.ProjectShareServer
 import com.jarves.mh.model.projectSlug
 import com.jarves.mh.model.generateQuickChatIdentity
 import com.jarves.mh.model.providerProtocolForAgent
@@ -247,6 +253,14 @@ data class AppUiState(
     val appUpdateDownloadedBytes: Long = 0L,
     val appUpdateTotalBytes: Long = -1L,
     val appUpdateError: String? = null,
+    val projectIcons: List<String> = listOf(
+        "Code", "Build", "Terminal", "Folder", "Dashboard", "Construction", "Smartphone", "Web", "Settings", "Description",
+        "Analytics", "Storage", "Memory", "BugReport", "Extension", "IntegrationInstructions", "AutoAwesome", "Cloud", "Router", "Security"
+    ),
+    val chatIcons: List<String> = listOf(
+        "Chat", "Psychology", "School", "Bolt", "AutoAwesome", "Public", "BugReport", "History", "Label", "Person",
+        "Face", "Science", "Rocket", "TipsAndUpdates", "Lightbulb", "Flashlight", "ElectricBolt", "Diamond", "HotelClass", "Favorite"
+    ),
     val ttsEnabled: Boolean = false,
     val ttsAutoSpeakAgent: Boolean = true,
     val ttsAnnounceTasks: Boolean = true,
@@ -256,6 +270,9 @@ data class AppUiState(
     val ttsSpeakingUtteranceId: String? = null,
     val persistentPackages: Set<String> = emptySet(),
     val autoInstallPersistentPackages: Boolean = true,
+    val activePlan: ExecutionPlan? = null,
+    val shareServerState: ShareServerState = ShareServerState(),
+    val isRefreshing: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -2819,14 +2836,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (clean.isBlank()) return
         _state.update { current ->
             val projects = current.projects.map { project ->
-                if (project.id == projectId) project.copy(name = clean) else project
+                if (project.id == projectId) project.copy(name = clean, slug = projectSlug(clean)) else project
             }
             val active = current.activeProject?.let { project ->
-                if (project.id == projectId) project.copy(name = clean) else project
+                if (project.id == projectId) project.copy(name = clean, slug = projectSlug(clean)) else project
             }
             current.copy(projects = projects, activeProject = active)
         }
         preferences.saveProjects(_state.value.projects)
+    }
+
+    fun updateProjectIcon(projectId: String, icon: String?) {
+        _state.update { current ->
+            val projects = current.projects.map { project ->
+                if (project.id == projectId) project.copy(icon = icon) else project
+            }
+            val active = current.activeProject?.let { project ->
+                if (project.id == projectId) project.copy(icon = icon) else project
+            }
+            current.copy(projects = projects, activeProject = active)
+        }
+        preferences.saveProjects(_state.value.projects)
+    }
+
+    fun updateChatIcon(projectId: String, chatId: String, icon: String?) {
+        val chats = preferences.loadProjectChats(projectId).map {
+            if (it.id == chatId) it.copy(icon = icon) else it
+        }
+        preferences.saveProjectChats(projectId, chats)
+        if (_state.value.activeProject?.id == projectId) {
+            _state.update { it.copy(projectChats = chats) }
+        }
+    }
+
+    fun renameChat(projectId: String, chatId: String, newName: String) {
+        val clean = newName.replace(Regex("\\s+"), " ").trim().take(60)
+        if (clean.isBlank()) return
+        val chats = preferences.loadProjectChats(projectId).map {
+            if (it.id == chatId) it.copy(title = clean) else it
+        }
+        preferences.saveProjectChats(projectId, chats)
+        if (_state.value.activeProject?.id == projectId) {
+            _state.update { it.copy(projectChats = chats) }
+        }
+    }
+
+    private fun renameProjectIfDefault(projectId: String, context: String) {
+        val current = _state.value
+        val project = current.projects.firstOrNull { it.id == projectId } ?: return
+        if (project.kind != ProjectKind.QUICK_PROJECT) return
+        
+        val randomNames = setOf("Bright", "Calm", "Clever", "Curious", "Gentle", "Nimble", "Quiet", "Swift", "Wise", "Bold")
+        val firstNameWord = project.name.split(' ').firstOrNull()
+        if (firstNameWord !in randomNames) return
+
+        val newName = context.split(Regex("\\s+"))
+            .filter { it.length > 3 }
+            .take(3)
+            .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+            .take(30)
+        
+        if (newName.isNotBlank()) {
+            renameProject(projectId, newName)
+        }
     }
 
     fun deleteProject(projectId: String) {
@@ -2839,6 +2911,155 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             File(filesDir, "workspaces/${project.id}").deleteRecursively()
             terminalHistoryFile(project.id).delete()
             preferences.deleteProjectChats(project.id)
+        }
+    }
+
+    private var shareServer: ProjectShareServer? = null
+
+    fun updateProjectPermissionMode(projectId: String, mode: PermissionMode) {
+        _state.update { current ->
+            val projects = current.projects.map { p ->
+                if (p.id == projectId) p.copy(permissionMode = mode) else p
+            }
+            val active = current.activeProject?.let { p ->
+                if (p.id == projectId) p.copy(permissionMode = mode) else p
+            }
+            current.copy(projects = projects, activeProject = active)
+        }
+        preferences.saveProjects(_state.value.projects)
+    }
+
+    fun startProjectSharing(projectId: String) {
+        val project = _state.value.projects.firstOrNull { it.id == projectId } ?: _state.value.activeProject ?: return
+        val workspace = projectWorkspaceRoot(project)
+        shareServer?.stop()
+        val server = ProjectShareServer(
+            context = getApplication(),
+            projectWorkspaceDir = workspace,
+            projectName = project.name,
+            onStateChanged = { shareState ->
+                _state.update { it.copy(shareServerState = shareState) }
+            },
+        )
+        shareServer = server
+        val sState = server.start()
+        _state.update { it.copy(shareServerState = sState) }
+    }
+
+    fun stopProjectSharing() {
+        shareServer?.stop()
+        shareServer = null
+        _state.update { it.copy(shareServerState = ShareServerState()) }
+    }
+
+    fun regenerateShareCode() {
+        shareServer?.regenerateCode()?.let { code ->
+            _state.update { it.copy(shareServerState = it.shareServerState.copy(passCode = code)) }
+        }
+    }
+
+    fun refreshActiveWorkspace() {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isRefreshing = true) }
+            refreshProjectFiles()
+            kotlinx.coroutines.delay(500)
+            _state.update { it.copy(isRefreshing = false) }
+        }
+    }
+
+    fun approvePlan() {
+        val plan = _state.value.activePlan ?: return
+        _state.update { it.copy(activePlan = plan.copy(isApproved = true)) }
+        sendPrompt("Plan approved. Proceed with the steps.")
+    }
+
+    fun cancelPlan() {
+        _state.update { it.copy(activePlan = null) }
+    }
+
+    fun createProjectFromExternalFolder(folderUri: Uri, context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, folderUri)
+            val folderName = docFile?.name?.ifBlank { "Folder Project" } ?: "Folder Project"
+            val slug = projectSlug(folderName)
+            val project = Project(
+                id = UUID.randomUUID().toString(),
+                name = folderName,
+                description = "Live folder: ${docFile?.uri?.path.orEmpty()}",
+                language = "Folder Workspace",
+                slug = slug,
+                rootPath = docFile?.uri?.toString().orEmpty(),
+                permissionMode = PermissionMode.WAIT_FOR_APPROVAL,
+                externalFolderPath = docFile?.uri?.toString(),
+            )
+            val targetWorkspace = projectWorkspaceRoot(project).apply { mkdirs() }
+            copyDocumentTreeToWorkspace(context, docFile, targetWorkspace)
+            withContext(Dispatchers.Main) {
+                _state.update { current ->
+                    val updated = listOf(project) + current.projects
+                    current.copy(projects = updated)
+                }
+                preferences.saveProjects(_state.value.projects)
+                openProject(project)
+            }
+        }
+    }
+
+    private fun copyDocumentTreeToWorkspace(context: Context, tree: androidx.documentfile.provider.DocumentFile?, dest: File) {
+        if (tree == null || !tree.isDirectory) return
+        tree.listFiles().forEach { file ->
+            val name = file.name ?: return@forEach
+            if (name.startsWith(".")) return@forEach
+            if (file.isDirectory) {
+                val subDir = File(dest, name).apply { mkdirs() }
+                copyDocumentTreeToWorkspace(context, file, subDir)
+            } else if (file.isFile) {
+                val targetFile = File(dest, name)
+                runCatching {
+                    context.contentResolver.openInputStream(file.uri)?.use { input ->
+                        targetFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            }
+        }
+    }
+
+    fun syncWorkspaceToExternalFolder(context: Context, project: Project) {
+        val extUriStr = project.externalFolderPath ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val tree = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, Uri.parse(extUriStr)) ?: return@launch
+            val workspace = projectWorkspaceRoot(project)
+            copyWorkspaceToDocumentTree(context, workspace, tree)
+        }
+    }
+
+    private fun copyWorkspaceToDocumentTree(context: Context, sourceDir: File, targetTree: androidx.documentfile.provider.DocumentFile) {
+        if (!sourceDir.isDirectory) return
+        val children = sourceDir.listFiles().orEmpty()
+        for (child in children) {
+            if (child.name.startsWith(".")) continue
+            if (child.isDirectory) {
+                var subTree = targetTree.findFile(child.name)
+                if (subTree == null || !subTree.isDirectory) {
+                    subTree = targetTree.createDirectory(child.name)
+                }
+                if (subTree != null) {
+                    copyWorkspaceToDocumentTree(context, child, subTree)
+                }
+            } else if (child.isFile) {
+                var docFile = targetTree.findFile(child.name)
+                if (docFile == null) {
+                    docFile = targetTree.createFile("application/octet-stream", child.name)
+                }
+                if (docFile != null) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(docFile.uri, "wt")?.use { out ->
+                            child.inputStream().use { it.copyTo(out) }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -3496,6 +3717,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendPrompt(prompt: String) {
         val project = state.value.activeProject ?: return
+        if (prompt.isNotBlank()) {
+            renameProjectIfDefault(project.id, prompt)
+        }
         if (_state.value.agentKind == AgentKind.ANTIGRAVITY &&
             _state.value.antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN) {
             _state.update { it.copy(toastMessage = "Sign in to Antigravity from Settings before starting a task.") }
@@ -3563,6 +3787,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     request.prompt,
                     request.history,
                     request.provider,
+                    request.project.permissionMode,
                 )
             }
         }
@@ -4024,6 +4249,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 request.prompt,
                 request.history,
                 request.provider,
+                request.project.permissionMode,
             )
         }
         return true

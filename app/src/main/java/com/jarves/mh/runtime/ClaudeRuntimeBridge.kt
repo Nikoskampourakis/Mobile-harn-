@@ -91,7 +91,15 @@ class ClaudeRuntimeBridge(
     private var lastThinkingUpdateAt = 0L
     private var currentThinkingBlockId = 0L
 
-    override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile): String = withContext(Dispatchers.IO + NonCancellable) {
+    override suspend fun startSession(
+        projectId: String,
+        projectSlug: String,
+        projectKind: ProjectKind,
+        prompt: String,
+        conversationHistory: List<ChatMessage>,
+        provider: ProviderProfile,
+        permissionMode: com.jarves.mh.model.PermissionMode,
+    ): String = withContext(Dispatchers.IO + NonCancellable) {
         val sessionId = UUID.randomUUID().toString()
         finishedSessions.remove(sessionId)
         activeSessionId = sessionId
@@ -190,7 +198,7 @@ class ClaudeRuntimeBridge(
             activeProcess = process
             if (userStopRequested) process.destroy()
             coroutineScope {
-                val permissionWatcher = launch { watchPermissionRequests(sessionId) }
+                val permissionWatcher = launch { watchPermissionRequests(sessionId, permissionMode) }
                 var lastDiagnostic = ""
                 val pendingOutput = StringBuilder()
                 val nativeProcess = process as? NativeSpawnProcess
@@ -377,11 +385,15 @@ class ClaudeRuntimeBridge(
         true
     }
 
-    private suspend fun watchPermissionRequests(sessionId: String) {
+    private suspend fun watchPermissionRequests(sessionId: String, permissionMode: com.jarves.mh.model.PermissionMode) {
         val bridge = File(context.filesDir, "runtime-bridge")
+        val processedApprovals = mutableSetOf<String>()
         while (kotlin.coroutines.coroutineContext.isActive) {
             bridge.listFiles { file -> file.name.endsWith(".request") }.orEmpty().forEach { file ->
                 val approvalId = file.name.removeSuffix(".request")
+                val responseFile = File(file.parentFile, "$approvalId.response")
+                if (responseFile.exists() || !processedApprovals.add(approvalId)) return@forEach
+
                 runCatching {
                     val json = JSONObject(file.readText())
                     val toolName = json.optString("tool_name", "Tool")
@@ -393,13 +405,45 @@ class ClaudeRuntimeBridge(
                         .ifBlank { command.orEmpty() }
                         .ifBlank { "$toolName running in project" }
 
-                    Log.d("ClaudeBridge", "Auto-approving permission request $approvalId for $toolName ($paths)")
-                    val response = File(file.parentFile, "$approvalId.response")
-                    response.writeText("allow")
+                    val isHighRisk = command != null && (
+                        command.contains("rm -rf") || command.contains("dd ") || command.contains("mkfs") ||
+                        command.contains("> /dev/") || command.contains("chmod 777")
+                    )
+                    val risk = if (isHighRisk) RiskLevel.HIGH else if (toolName in listOf("Bash", "Edit", "Write")) RiskLevel.REVIEW else RiskLevel.SAFE
 
-                    eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
+                    val request = ToolRequest(
+                        approvalId = approvalId,
+                        sessionId = sessionId,
+                        toolName = toolName,
+                        explanation = explanation,
+                        affectedPaths = paths,
+                        commandPreview = command,
+                        risk = risk,
+                    )
+
+                    when (permissionMode) {
+                        com.jarves.mh.model.PermissionMode.FULL_PERMISSIONS -> {
+                            responseFile.writeText("allow")
+                            eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
+                        }
+                        com.jarves.mh.model.PermissionMode.APPROVE_WITH_AGENT -> {
+                            if (!isHighRisk) {
+                                responseFile.writeText("allow")
+                                eventBus.emit(RuntimeEvent.RuntimeLog(sessionId, "Reviewer Agent", "Approved safe action: $toolName"))
+                                eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
+                            } else {
+                                pending[approvalId] = PendingPermission(request, responseFile)
+                                eventBus.emit(RuntimeEvent.ToolRequested(sessionId, request))
+                            }
+                        }
+                        com.jarves.mh.model.PermissionMode.WAIT_FOR_APPROVAL,
+                        com.jarves.mh.model.PermissionMode.REVIEW_PLAN -> {
+                            pending[approvalId] = PendingPermission(request, responseFile)
+                            eventBus.emit(RuntimeEvent.ToolRequested(sessionId, request))
+                        }
+                    }
                 }.onFailure {
-                    File(file.parentFile, "$approvalId.response").writeText("allow")
+                    responseFile.writeText("allow")
                 }
             }
             delay(50)

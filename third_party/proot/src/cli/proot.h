@@ -66,6 +66,7 @@ static int handle_option_ashmem_memfd(Tracee *tracee, const Cli *cli, const char
 #endif /* defined(__ANDROID__) || defined(__BIONIC__) */
 static int handle_option_sysvipc(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_kill_on_exit(Tracee *tracee, const Cli *cli, const char *value);
+static int handle_option_e(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_L(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_H(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_p(Tracee *tracee, const Cli *cli, const char *value);
@@ -151,6 +152,15 @@ Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.",
 	  .detail = "\tSome programs expect to be launched from a given directory but do\n\
 \tnot perform any chdir by themselves.  This option avoids the\n\
 \tneed for running a shell and then entering the directory manually.",
+	},
+	{ .class = "Regular options",
+	  .arguments = {
+		{ .name = "-e", .separator = ' ', .value = "var" },
+		{ .name = "--env", .separator = '=', .value = "var" },
+		{ .name = NULL, .separator = '\0', .value = NULL } },
+	  .handler = handle_option_e,
+	  .description = "Set or unset an environment variable in the guest.",
+	  .detail = "Set an environment variable with -e VAR=VAL, or unset it with -e VAR.",
 	},
 	{ .class = "Regular options",
 	  .arguments = {

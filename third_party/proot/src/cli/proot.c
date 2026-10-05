@@ -198,6 +198,18 @@ static int handle_option_kill_on_exit(Tracee *tracee, const Cli *cli UNUSED, con
 	return 0;
 }
 
+static int handle_option_e(Tracee *tracee, const Cli *cli UNUSED, const char *value)
+{
+	if (value == NULL || value[0] == 0)
+		return 0;
+	if (strchr(value, '=') != NULL) {
+		putenv(talloc_strdup(tracee->ctx, value));
+	} else {
+		unsetenv(value);
+	}
+	return 0;
+}
+
 static int handle_option_v(Tracee *tracee, const Cli *cli UNUSED, const char *value)
 {
 	int status;

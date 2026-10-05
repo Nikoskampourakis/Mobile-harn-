@@ -120,7 +120,14 @@ internal class LocalFormatGateway(
                 }
             }
             if (text.isNotBlank() || toolCalls.length() > 0) {
-                val converted = JSONObject().put("role", role).put("content", text.ifBlank { JSONObject.NULL })
+                val converted = JSONObject().put("role", role)
+                if (text.isNotBlank()) {
+                    converted.put("content", text)
+                } else if (toolCalls.length() > 0) {
+                    converted.put("content", JSONObject.NULL)
+                } else {
+                    converted.put("content", "")
+                }
                 if (toolCalls.length() > 0) converted.put("tool_calls", toolCalls)
                 messages.put(converted)
             }
@@ -156,6 +163,12 @@ internal class LocalFormatGateway(
                 .put("name", function.optString("name"))
                 .put("input", arguments))
         }
+        if (content.length() == 0) {
+            val reasoning = message.optString("reasoning_content")
+                .ifBlank { message.optString("thought") }
+                .ifBlank { " " }
+            content.put(JSONObject().put("type", "text").put("text", reasoning))
+        }
         val usage = source.optJSONObject("usage") ?: JSONObject()
         return JSONObject().put("id", source.optString("id").ifBlank { "msg_${UUID.randomUUID()}" })
             .put("type", "message").put("role", "assistant").put("model", model)
@@ -165,7 +178,12 @@ internal class LocalFormatGateway(
     }
 
     private fun callProvider(body: JSONObject): Pair<Int, String> {
-        val endpoint = profile.baseUrl.trimEnd('/') + "/chat/completions"
+        val baseEndpoint = profile.baseUrl.trimEnd('/') + "/chat/completions"
+        val endpoint = if (baseEndpoint.contains("generativelanguage.googleapis.com") && apiKey.isNotBlank() && !baseEndpoint.contains("key=")) {
+            if (baseEndpoint.contains("?")) "$baseEndpoint&key=$apiKey" else "$baseEndpoint?key=$apiKey"
+        } else {
+            baseEndpoint
+        }
         var lastCode = 500
         var lastBody = ""
         val maxRetries = 3
@@ -178,12 +196,17 @@ internal class LocalFormatGateway(
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.setRequestProperty("Authorization", "Bearer $apiKey")
+                connection.setRequestProperty("x-goog-api-key", apiKey)
                 connection.outputStream.use { it.write(body.toString().toByteArray()) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val responseText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                var responseText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (responseText.isBlank() && code !in 200..299) {
+                    val msg = connection.responseMessage
+                    responseText = if (!msg.isNullOrBlank()) "HTTP $code: $msg" else "HTTP $code"
+                }
                 lastCode = code
-                lastBody = responseText
+                lastBody = responseText.ifBlank { "HTTP $code from provider" }
                 if (code == 429 || code == 503 || code == 529) {
                     if (attempt < maxRetries - 1) {
                         val backoffMillis = 1500L * (1L shl attempt) + (Math.random() * 500).toLong()
@@ -191,7 +214,7 @@ internal class LocalFormatGateway(
                         continue
                     }
                 }
-                return code to responseText
+                return code to (if (responseText.isNotBlank()) responseText else lastBody)
             } catch (e: Exception) {
                 lastBody = e.message ?: "Connection error"
                 if (attempt < maxRetries - 1) {

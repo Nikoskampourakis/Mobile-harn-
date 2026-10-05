@@ -267,6 +267,7 @@ class AntigravityRuntimeBridge(
         prompt: String,
         conversationHistory: List<ChatMessage>,
         provider: ProviderProfile,
+        permissionMode: com.jarves.mh.model.PermissionMode,
     ): String = withContext(Dispatchers.IO + NonCancellable) {
         val sessionId = UUID.randomUUID().toString()
         activeSessionId = sessionId

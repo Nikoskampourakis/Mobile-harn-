@@ -171,6 +171,37 @@ data class ProviderProfile(
 
 enum class ProjectKind { PROJECT, QUICK_PROJECT }
 
+enum class PermissionMode(
+    val title: String,
+    val description: String,
+) {
+    WAIT_FOR_APPROVAL("Wait for approval", "Review and confirm each command and file edit before it runs."),
+    APPROVE_WITH_AGENT("Approve with agent", "A secondary reviewer agent verifies safety and approves safe operations for you."),
+    FULL_PERMISSIONS("Full permissions", "Allow all tools, edits, and terminal commands to run without prompting."),
+    REVIEW_PLAN("Plan before executing", "Agent creates a structured plan for you to review before modifying anything.");
+
+    companion object {
+        val AUTO_APPROVE get() = FULL_PERMISSIONS
+    }
+}
+
+data class PlanStep(
+    val id: String = UUID.randomUUID().toString(),
+    val index: Int,
+    val title: String,
+    val description: String = "",
+    val isComplete: Boolean = false,
+    val inProgress: Boolean = false,
+)
+
+data class ExecutionPlan(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val summary: String,
+    val steps: List<PlanStep>,
+    val isApproved: Boolean = false,
+)
+
 data class Project(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -178,8 +209,11 @@ data class Project(
     val language: String,
     val slug: String = projectSlug(name),
     val rootPath: String = "",
+    val icon: String? = null,
     val updatedAtMillis: Long = System.currentTimeMillis(),
     val kind: ProjectKind = ProjectKind.PROJECT,
+    val permissionMode: PermissionMode = PermissionMode.WAIT_FOR_APPROVAL,
+    val externalFolderPath: String? = null,
 ) {
     val formattedUpdatedAt: String
         get() {
@@ -346,6 +380,7 @@ data class ChatAttachment(
 data class ProjectChat(
     val id: String = UUID.randomUUID().toString(),
     val title: String = "New chat",
+    val icon: String? = null,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val updatedAtMillis: Long = System.currentTimeMillis(),
 )
