@@ -446,6 +446,7 @@ private fun FileTreeView(
         }
     }
 }
+}
 
 @Composable
 private fun LiveAiEditsView(

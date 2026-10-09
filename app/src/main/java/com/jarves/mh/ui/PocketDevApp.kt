@@ -10,7 +10,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.Settings
+import com.jarves.mh.R
 import android.speech.RecognizerIntent
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -234,29 +236,81 @@ private sealed class CustomizeTarget {
 private fun openFolderInFileManager(context: Context, project: Project) {
     val workspace = File(context.filesDir, "workspaces/${project.id}")
     if (!workspace.exists()) workspace.mkdirs()
+
+    val authority = "${context.packageName}.documents"
+    val rootUri = DocumentsContract.buildRootUri(authority, "workspaces")
+    val docUri = DocumentsContract.buildDocumentUri(authority, "path:${project.id}")
+
+    // 1. If external folder path is configured, open that external directory URI directly
+    if (!project.externalFolderPath.isNullOrBlank()) {
+        try {
+            val extUri = Uri.parse(project.externalFolderPath)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(extUri, DocumentsContract.Document.MIME_TYPE_DIR)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            return
+        } catch (_: Exception) {}
+    }
+
+    // 2. Open via Storage Access Framework BROWSE_DOCUMENT_ROOT (system DocumentsUI / Files)
+    val browseIntent = Intent("android.provider.action.BROWSE_DOCUMENT_ROOT").apply {
+        data = rootUri
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+    if (browseIntent.resolveActivity(context.packageManager) != null) {
+        try {
+            context.startActivity(browseIntent)
+            Toast.makeText(context, "Opening ${project.name} in Files…", Toast.LENGTH_SHORT).show()
+            return
+        } catch (_: Exception) {}
+    }
+
+    // 3. Try standard ACTION_VIEW with DocumentsContract URI
     try {
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            workspace
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "resource/folder")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(docUri, DocumentsContract.Document.MIME_TYPE_DIR)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
-        val chooser = Intent.createChooser(intent, "Open in File Explorer")
+        val chooser = Intent.createChooser(viewIntent, "Open ${project.name} in File Explorer")
         chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(chooser)
-    } catch (e: Exception) {
-        val filesIntent = context.packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
-            ?: context.packageManager.getLaunchIntentForPackage("com.android.documentsui")
-        if (filesIntent != null) {
-            filesIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(filesIntent)
-        } else {
-            Toast.makeText(context, "Workspace path: ${workspace.absolutePath}", Toast.LENGTH_LONG).show()
-        }
+        return
+    } catch (_: Exception) {}
+
+    // 4. Try DocumentsUI packages explicitly
+    for (pkg in listOf("com.google.android.documentsui", "com.android.documentsui")) {
+        try {
+            val pkgIntent = context.packageManager.getLaunchIntentForPackage(pkg)?.apply {
+                data = rootUri
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, docUri)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (pkgIntent != null) {
+                context.startActivity(pkgIntent)
+                Toast.makeText(context, "Opened Files. Tap ☰ side menu → '${context.getString(R.string.app_name)}' to view project files", Toast.LENGTH_LONG).show()
+                return
+            }
+        } catch (_: Exception) {}
     }
+
+    // 5. If Acode is installed, open Acode directly
+    val acodeIntent = context.packageManager.getLaunchIntentForPackage("com.foxdebug.acode")
+    if (acodeIntent != null) {
+        try {
+            acodeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(acodeIntent)
+            Toast.makeText(context, "In Acode: Tap Open Folder → ☰ side menu → '${context.getString(R.string.app_name)}'", Toast.LENGTH_LONG).show()
+            return
+        } catch (_: Exception) {}
+    }
+
+    Toast.makeText(
+        context,
+        "Accessible in Files app / Acode under side menu: ${context.getString(R.string.app_name)} Workspaces",
+        Toast.LENGTH_LONG
+    ).show()
 }
 
 @Composable
@@ -273,9 +327,31 @@ private fun ProjectPathDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text("Project Folder") },
+        title = { Text("Project Folder & Explorer") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Acode & Android File Explorer SAF integration card
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Code, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Acode & File Explorer Accessible", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Text(
+                            "This project is exposed through Android's Storage Provider. To edit in Acode: tap 'Open folder' → tap ☰ side drawer → select '${context.getString(R.string.app_name)}' → choose '${project.name}'.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp,
+                        )
+                    }
+                }
+
                 if (project.externalFolderPath != null) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -289,7 +365,7 @@ private fun ProjectPathDialog(
                         ) {
                             Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
                             Column {
-                                Text("Live Folder Environment", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("Linked Device Folder", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
                                 Text("Edits made by AI can be synced directly back to this folder.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                             }
                         }
@@ -311,8 +387,8 @@ private fun ProjectPathDialog(
                 }
 
                 Text(
-                    "Internal Path:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
+                    "Internal App Storage:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
                 Text(
                     project.rootPath.ifBlank { File(context.filesDir, "workspaces/${project.id}").absolutePath },
@@ -329,9 +405,9 @@ private fun ProjectPathDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Open in Default File Explorer")
+                    Text("Open in Android File Explorer")
                 }
 
                 if (project.externalFolderPath != null && onSyncFolder != null) {
@@ -352,7 +428,7 @@ private fun ProjectPathDialog(
                 Toast.makeText(context, "Path copied!", Toast.LENGTH_SHORT).show()
                 onDismiss()
             }) {
-                Text("Copy Path")
+                Text("Copy Guest Path")
             }
         },
         dismissButton = {
@@ -1147,6 +1223,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onUpdateProjectIcon = viewModel::updateProjectIcon,
             onRenameChat = viewModel::renameChat,
             onUpdateChatIcon = viewModel::updateChatIcon,
+            onDeleteChat = viewModel::deleteChat,
             onRefreshWorkspace = viewModel::refreshActiveWorkspace,
             onApprovePlan = viewModel::approvePlan,
             onCancelPlan = viewModel::cancelPlan,
@@ -4144,7 +4221,59 @@ private fun ProjectsScreen(
                     }
                 }
             }
-            item { Text("Dashboard actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Projects (${projects.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            if (projects.isEmpty()) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "No projects yet",
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                "Create a starter project or import an existing repository above.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(projects, key = { it.id }) { proj ->
+                    ProjectCard(
+                        project = proj,
+                        taskRunning = state.isRunning && state.activeProject?.id == proj.id,
+                        terminalRunning = state.projectTerminalRunning && state.activeProject?.id == proj.id,
+                        onOpen = { onOpen(proj) },
+                        onRename = { newName -> onRenameProject(proj.id, newName) },
+                        onDelete = { onDeleteProject(proj.id) },
+                        onUnlinkGitHub = if (state.githubLogin != null) { { onDisconnectGitHub() } } else null,
+                    )
+                }
+            }
         }
     }
     if (showCreate) AlertDialog(
@@ -4452,10 +4581,12 @@ private fun ProjectCard(
     onOpen: () -> Unit,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
+    onUnlinkGitHub: (() -> Unit)? = null,
 ) {
     var menuOpen by rememberSaveable(project.id) { mutableStateOf(false) }
     var showRename by rememberSaveable(project.id) { mutableStateOf(false) }
     var showDelete by rememberSaveable(project.id) { mutableStateOf(false) }
+    var showUnlinkConfirm by rememberSaveable(project.id) { mutableStateOf(false) }
     var renameText by rememberSaveable(project.id) { mutableStateOf(project.name) }
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -4501,6 +4632,13 @@ private fun ProjectCard(
                         leadingIcon = { Icon(Icons.Default.Edit, null) },
                         onClick = { menuOpen = false; renameText = project.name; showRename = true },
                     )
+                    if (onUnlinkGitHub != null) {
+                        DropdownMenuItem(
+                            text = { Text("Unlink GitHub") },
+                            leadingIcon = { Icon(Icons.Default.LinkOff, null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = { menuOpen = false; showUnlinkConfirm = true },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Delete project") },
                         leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
@@ -4517,6 +4655,22 @@ private fun ProjectCard(
             text = { OutlinedTextField(renameText, { renameText = it }, label = { Text("Project name") }, singleLine = true) },
             confirmButton = { TextButton(onClick = { onRename(renameText); showRename = false }, enabled = renameText.isNotBlank()) { Text("Save") } },
             dismissButton = { TextButton(onClick = { showRename = false }) { Text("Cancel") } },
+        )
+    }
+    if (showUnlinkConfirm) {
+        AlertDialog(
+            onDismissRequest = { showUnlinkConfirm = false },
+            title = { Text("Unlink GitHub environment?") },
+            text = { Text("This will disconnect GitHub authentication and clear repository links from this environment.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showUnlinkConfirm = false
+                    onUnlinkGitHub?.invoke()
+                }) {
+                    Text("Unlink", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showUnlinkConfirm = false }) { Text("Cancel") } },
         )
     }
     if (showDelete) {
@@ -4664,6 +4818,7 @@ private fun WorkspaceScreen(
     onUpdateProjectIcon: (String, String?) -> Unit = { _, _ -> },
     onRenameChat: (String, String, String) -> Unit = { _, _, _ -> },
     onUpdateChatIcon: (String, String, String?) -> Unit = { _, _, _ -> },
+    onDeleteChat: (String, String) -> Unit = { _, _ -> },
     onRefreshWorkspace: () -> Unit = onRefreshFiles,
     onApprovePlan: () -> Unit = {},
     onCancelPlan: () -> Unit = {},
@@ -4783,6 +4938,7 @@ private fun WorkspaceScreen(
     )
     val chatListState = rememberLazyListState()
     var userScrolledUp by rememberSaveable { mutableStateOf(false) }
+    var showChatSwitcher by rememberSaveable { mutableStateOf(false) }
 
     val chatItemCount = state.messages.size +
         (if (state.liveProcess.isNotEmpty() || state.liveThinking) 1 else 0) +
@@ -4872,6 +5028,33 @@ private fun WorkspaceScreen(
             dismissButton = { TextButton(onClick = onTerminalCancel) { Text("Cancel") } },
         )
     }
+    if (showChatSwitcher) {
+        ChatSwitcherDialog(
+            chats = state.projectChats,
+            activeChatId = state.activeChatId,
+            switchingEnabled = !state.isRunning,
+            allowCreate = true,
+            onDismiss = { showChatSwitcher = false },
+            onCreate = {
+                showChatSwitcher = false
+                onCreateChat()
+            },
+            onSwitch = { chatId ->
+                showChatSwitcher = false
+                onSwitchChat(chatId)
+            },
+            onRename = { chatId, newTitle ->
+                state.activeProject?.let { onRenameChat(it.id, chatId, newTitle) }
+            },
+            onDelete = { chatId ->
+                state.activeProject?.let { onDeleteChat(it.id, chatId) }
+            },
+            onCustomize = { chatId ->
+                showChatSwitcher = false
+                customizeTarget = CustomizeTarget.Chat(state.activeProject?.id ?: "", chatId)
+            },
+        )
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -4946,135 +5129,402 @@ private fun WorkspaceScreen(
                             )
                         }
                     }
+                    IconButton(
+                        onClick = { showChatSwitcher = true },
+                    ) {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = "Project chats history",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (state.isRunning) CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         bottomBar = {
-            if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                // 3 Main Tabs
-                WorkspaceTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = {
-                            selectedTab = tab
-                            if (tab == WorkspaceTab.FILES) onRefreshFiles()
-                        },
-                        icon = { Icon(tab.icon, contentDescription = null) },
-                        label = null,
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        ),
-                    )
-                }
+            if (!keyboardVisible) {
+                var showMoreSheet by rememberSaveable { mutableStateOf(false) }
 
-                // 2 Extra buttons for Refresh, Fork, Share, Settings
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { onRefreshWorkspace() },
-                    icon = {
-                        if (state.isRefreshing) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Refresh, "Refresh")
-                        }
-                    },
-                    label = null,
-                )
-
-                var showMoreMenuInside by remember { mutableStateOf(false) }
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { showMoreMenuInside = true },
-                    icon = {
-                        Box {
-                            Icon(Icons.Default.MoreVert, "More")
-                            DropdownMenu(
-                                expanded = showMoreMenuInside,
-                                onDismissRequest = { showMoreMenuInside = false }
+                Surface(
+                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+                    tonalElevation = 4.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        WorkspaceTab.entries.forEach { tab ->
+                            val isSelected = selectedTab == tab
+                            Surface(
+                                selected = isSelected,
+                                onClick = {
+                                    selectedTab = tab
+                                    if (tab == WorkspaceTab.FILES) onRefreshFiles()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 2.dp),
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("Permissions (${state.activeProject?.permissionMode?.title?.take(16) ?: "Approval"})") },
-                                    onClick = {
-                                        showMoreMenuInside = false
-                                        showPermissionsDialog = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Security, null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (state.shareServerState.isRunning) "Share Link (Active)" else "Share via Live Link") },
-                                    onClick = {
-                                        showMoreMenuInside = false
-                                        showShareDialog = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Link, null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Open in File Explorer") },
-                                    onClick = {
-                                        showMoreMenuInside = false
-                                        state.activeProject?.let { openFolderInFileManager(context, it) }
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Launch, null) }
-                                )
-                                if (state.activeProject?.externalFolderPath != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Sync to Device Folder") },
-                                        onClick = {
-                                            showMoreMenuInside = false
-                                            state.activeProject?.let { onSyncWorkspaceToExternalFolder(context, it) }
-                                            Toast.makeText(context, "Syncing changes to device folder…", Toast.LENGTH_SHORT).show()
+                                Column(
+                                    modifier = Modifier.padding(vertical = 6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = tab.name,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        text = when (tab) {
+                                            WorkspaceTab.CHAT -> "Chat"
+                                            WorkspaceTab.PREVIEW -> "Preview"
+                                            WorkspaceTab.FILES -> "Files"
                                         },
-                                        leadingIcon = { Icon(Icons.Default.Sync, null) }
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                DropdownMenuItem(
-                                    text = { Text("Fork Chat") },
-                                    onClick = {
-                                        showMoreMenuInside = false
-                                        onForkChat(null)
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.CallSplit, null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Customize Chat") },
-                                    onClick = {
-                                        showMoreMenuInside = false
-                                        customizeTarget = CustomizeTarget.Chat(state.activeProject?.id ?: "", state.activeChatId ?: "")
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Palette, null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Project Folder") },
-                                    onClick = {
-                                        showMoreMenuInside = false
-                                        projectPathTarget = state.activeProject
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Export Project") },
-                                    onClick = {
-                                        showMoreMenuInside = false
-                                        exportProjectLauncher.launch("${state.activeProject?.slug ?: "project"}.zip")
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Share, null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Settings") },
-                                    onClick = {
-                                        showMoreMenuInside = false
-                                        onOpenDrawer()
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Settings, null) }
+                            }
+                        }
+
+                        // Refresh button
+                        Surface(
+                            onClick = { onRefreshWorkspace() },
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.Transparent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 2.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                if (state.isRefreshing) {
+                                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Refresh",
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "Refresh",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
-                    },
-                    label = null,
-                )
+
+                        // More Menu button
+                        Surface(
+                            onClick = { showMoreSheet = true },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (showMoreSheet) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 2.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(
+                                    Icons.Default.MoreHoriz,
+                                    contentDescription = "More",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (showMoreSheet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "More",
+                                    fontSize = 11.sp,
+                                    color = if (showMoreSheet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (showMoreSheet) {
+                    ModalBottomSheet(
+                        onDismissRequest = { showMoreSheet = false },
+                        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .navigationBarsPadding(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "More Options & Actions",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                            // Open in File Explorer
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    state.activeProject?.let { openFolderInFileManager(context, it) }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text("Open in Android File Explorer", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Browse in Files app / Acode via Storage Access Provider", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // Project Folder & Paths
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    projectPathTarget = state.activeProject
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.FolderOpen, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text("Project Folder & Acode Paths", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("View guest path /workspace/${state.activeProject?.slug} & storage info", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // Execution Permissions
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    showPermissionsDialog = true
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.Security, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text("Permissions (${state.activeProject?.permissionMode?.title ?: "Approval"})", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Control how edits and commands are approved", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // Live Link Sharing
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    showShareDialog = true
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.Link, null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text(if (state.shareServerState.isRunning) "Share Link (Active)" else "Share via Live Link", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Live browser preview and real-time collaboration", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // Sync to Device Folder (if configured)
+                            if (state.activeProject?.externalFolderPath != null) {
+                                Surface(
+                                    onClick = {
+                                        showMoreSheet = false
+                                        state.activeProject?.let { onSyncWorkspaceToExternalFolder(context, it) }
+                                        Toast.makeText(context, "Syncing changes to device folder…", Toast.LENGTH_SHORT).show()
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(Icons.Default.Sync, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                        Spacer(Modifier.width(14.dp))
+                                        Column {
+                                            Text("Sync to Device Folder", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                            Text("Write AI modifications back into linked external directory", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Fork Chat
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    onForkChat(null)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.CallSplit, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text("Fork Chat", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Branch conversation into a separate chat history", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // Project Chats & History
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    showChatSwitcher = true
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text("Project Chats (${state.projectChats.size})", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Switch, create, rename, or delete conversation threads", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // Customize Chat
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    customizeTarget = CustomizeTarget.Chat(state.activeProject?.id ?: "", state.activeChatId ?: "")
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.Palette, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text("Customize Chat", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Appearance, colors, and layout customizations", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // Export Project (.zip)
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    exportProjectLauncher.launch("${state.activeProject?.slug ?: "project"}.zip")
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text("Export Project (.zip)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Download workspace archive to device", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            // Settings
+                            Surface(
+                                onClick = {
+                                    showMoreSheet = false
+                                    onOpenDrawer()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(14.dp))
+                                    Column {
+                                        Text("Settings & Drawer", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Models, providers, and app configuration", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(14.dp))
+                        }
+                    }
+                }
             }
         },
     ) { padding ->
@@ -5128,6 +5578,9 @@ private fun WorkspaceScreen(
                     activePlan = state.activePlan,
                     onApprovePlan = onApprovePlan,
                     onCancelPlan = onCancelPlan,
+                    permissionMode = state.activeProject?.permissionMode ?: PermissionMode.WAIT_FOR_APPROVAL,
+                    onUpdatePermissionMode = onUpdatePermissionMode,
+                    onOpenPermissionsDialog = { showPermissionsDialog = true },
                 )
                 WorkspaceTab.FILES -> com.jarves.mh.ui.CodeWorkspaceTab(
                     activeProject = state.activeProject,
@@ -5227,10 +5680,83 @@ private fun ChatSwitcherDialog(
     onCreate: () -> Unit,
     onSwitch: (String) -> Unit,
     allowCreate: Boolean = true,
+    onRename: ((String, String) -> Unit)? = null,
+    onDelete: ((String) -> Unit)? = null,
+    onCustomize: ((String) -> Unit)? = null,
 ) {
+    var renameTargetChat by remember { mutableStateOf<ProjectChat?>(null) }
+    var renameChatText by remember { mutableStateOf("") }
+    var deleteTargetChat by remember { mutableStateOf<ProjectChat?>(null) }
+
+    if (renameTargetChat != null) {
+        val target = renameTargetChat!!
+        AlertDialog(
+            onDismissRequest = { renameTargetChat = null },
+            title = { Text("Rename chat") },
+            text = {
+                OutlinedTextField(
+                    value = renameChatText,
+                    onValueChange = { renameChatText = it },
+                    label = { Text("Chat title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val trimmed = renameChatText.trim()
+                        if (trimmed.isNotBlank()) {
+                            onRename?.invoke(target.id, trimmed)
+                        }
+                        renameTargetChat = null
+                    },
+                    enabled = renameChatText.isNotBlank(),
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTargetChat = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    if (deleteTargetChat != null) {
+        val target = deleteTargetChat!!
+        AlertDialog(
+            onDismissRequest = { deleteTargetChat = null },
+            title = { Text("Delete this chat?") },
+            text = { Text("‘${target.title}’ conversation history will be permanently removed.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete?.invoke(target.id)
+                        deleteTargetChat = null
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTargetChat = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Project chats") },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Project chats")
+            }
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (allowCreate) {
@@ -5245,23 +5771,66 @@ private fun ChatSwitcherDialog(
                 }
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(chats, key = { it.id }) { chat ->
+                        var itemMenuOpen by remember { mutableStateOf(false) }
                         Surface(
                             modifier = Modifier.fillMaxWidth().clickable(enabled = switchingEnabled) { onSwitch(chat.id) },
                             shape = RoundedCornerShape(12.dp),
                             color = if (chat.id == activeChatId) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                         ) {
-                            Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(18.dp))
+                            Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(iconFromName(chat.icon, Icons.Default.ChatBubble), null, modifier = Modifier.size(18.dp), tint = if (chat.id == activeChatId) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(chat.title, fontWeight = if (chat.id == activeChatId) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                                    Text(chat.title, fontWeight = if (chat.id == activeChatId) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(
-                                        if (chat.id == activeChatId) "Current chat" else "Saved conversation",
+                                        if (chat.id == activeChatId) "Current active chat" else "Saved conversation",
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                if (chat.id == activeChatId) Icon(Icons.Default.Check, "Current", tint = PocketGreen)
+                                if (chat.id == activeChatId) {
+                                    Icon(Icons.Default.Check, "Current", tint = PocketGreen, modifier = Modifier.size(18.dp).padding(end = 4.dp))
+                                }
+                                if (onRename != null || onDelete != null || onCustomize != null) {
+                                    Box {
+                                        IconButton(onClick = { itemMenuOpen = true }, modifier = Modifier.size(32.dp)) {
+                                            Icon(Icons.Default.MoreVert, "Chat options", modifier = Modifier.size(18.dp))
+                                        }
+                                        DropdownMenu(expanded = itemMenuOpen, onDismissRequest = { itemMenuOpen = false }) {
+                                            if (onRename != null) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Rename") },
+                                                    leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                                    onClick = {
+                                                        itemMenuOpen = false
+                                                        renameChatText = chat.title
+                                                        renameTargetChat = chat
+                                                    },
+                                                )
+                                            }
+                                            if (onCustomize != null) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Customize icon") },
+                                                    leadingIcon = { Icon(Icons.Default.Palette, null) },
+                                                    onClick = {
+                                                        itemMenuOpen = false
+                                                        onCustomize(chat.id)
+                                                    },
+                                                )
+                                            }
+                                            if (onDelete != null && chats.size > 1) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Delete") },
+                                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                                    onClick = {
+                                                        itemMenuOpen = false
+                                                        deleteTargetChat = chat
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -5558,6 +6127,9 @@ private fun ChatTab(
     activePlan: ExecutionPlan? = null,
     onApprovePlan: (() -> Unit)? = null,
     onCancelPlan: (() -> Unit)? = null,
+    permissionMode: PermissionMode = PermissionMode.WAIT_FOR_APPROVAL,
+    onUpdatePermissionMode: (PermissionMode) -> Unit = {},
+    onOpenPermissionsDialog: () -> Unit = {},
 ) {
     val view = LocalView.current
     val context = LocalContext.current
@@ -5768,149 +6340,275 @@ private fun ChatTab(
                 val canSend = prompt.isNotBlank() || pendingAttachments.isNotEmpty()
 
                 Surface(
-                    shape = RoundedCornerShape(26.dp),
+                    shape = RoundedCornerShape(22.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(
                         width = 1.dp,
-                        color = if (canSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
+                        color = if (canSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else MaterialTheme.colorScheme.outlineVariant,
                     ),
+                    tonalElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.Bottom,
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                     ) {
-                        var showUploadMenu by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(
-                                onClick = { showUploadMenu = true },
-                                enabled = !isRunning && pendingAttachments.size < 5,
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Upload",
-                                    modifier = Modifier.size(22.dp),
-                                    tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showUploadMenu,
-                                onDismissRequest = { showUploadMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Upload Files") },
-                                    onClick = {
-                                        showUploadMenu = false
-                                        onAttach()
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.AttachFile, null) }
-                                )
-                                if (onCamera != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Take Photo") },
-                                        onClick = {
-                                            showUploadMenu = false
-                                            onCamera()
-                                        },
-                                        leadingIcon = { Icon(Icons.Default.PhotoCamera, null) }
-                                    )
-                                }
-                            }
-                        }
-
-                        BasicTextField(
-                            value = prompt,
-                            onValueChange = { prompt = it },
+                        // Permissions and model info toolstrip inside the chat box
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 4.dp, vertical = 10.dp)
-                                .heightIn(min = 20.dp, max = 130.dp),
-                            textStyle = TextStyle(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp,
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                            decorationBox = { innerTextField ->
-                                Box(contentAlignment = Alignment.CenterStart) {
-                                    if (prompt.isEmpty()) {
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            var showPermissionDropdown by remember { mutableStateOf(false) }
+                            Box {
+                                Surface(
+                                    onClick = { showPermissionDropdown = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = when (permissionMode) {
+                                                PermissionMode.WAIT_FOR_APPROVAL -> Icons.Default.Security
+                                                PermissionMode.APPROVE_WITH_AGENT -> Icons.Default.SmartToy
+                                                PermissionMode.FULL_PERMISSIONS -> Icons.Default.Bolt
+                                                PermissionMode.REVIEW_PLAN -> Icons.Default.Assignment
+                                            },
+                                            contentDescription = "Permission Mode",
+                                            modifier = Modifier.size(13.dp),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Spacer(Modifier.width(5.dp))
                                         Text(
-                                            text = "Message ${agentKind.title}…",
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 15.sp,
+                                            text = permissionMode.title,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Spacer(Modifier.width(2.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Change permissions",
+                                            modifier = Modifier.size(15.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
-                                    innerTextField()
                                 }
-                            },
-                        )
 
-                        Spacer(Modifier.width(2.dp))
+                                DropdownMenu(
+                                    expanded = showPermissionDropdown,
+                                    onDismissRequest = { showPermissionDropdown = false },
+                                ) {
+                                    Text(
+                                        "Execution Permissions",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                    )
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                                    PermissionMode.entries.forEach { mode ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(mode.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                                    Text(mode.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = when (mode) {
+                                                        PermissionMode.WAIT_FOR_APPROVAL -> Icons.Default.Security
+                                                        PermissionMode.APPROVE_WITH_AGENT -> Icons.Default.SmartToy
+                                                        PermissionMode.FULL_PERMISSIONS -> Icons.Default.Bolt
+                                                        PermissionMode.REVIEW_PLAN -> Icons.Default.Assignment
+                                                    },
+                                                    contentDescription = null,
+                                                    tint = if (mode == permissionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(18.dp),
+                                                )
+                                            },
+                                            trailingIcon = if (mode == permissionMode) {
+                                                { Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                                            } else null,
+                                            onClick = {
+                                                showPermissionDropdown = false
+                                                onUpdatePermissionMode(mode)
+                                            },
+                                        )
+                                    }
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                                    DropdownMenuItem(
+                                        text = { Text("Permissions System Dialog…", fontSize = 12.sp) },
+                                        leadingIcon = { Icon(Icons.Default.Tune, null, modifier = Modifier.size(16.dp)) },
+                                        onClick = {
+                                            showPermissionDropdown = false
+                                            onOpenPermissionsDialog()
+                                        },
+                                    )
+                                }
+                            }
 
-                        if (!isRunning) {
-                            IconButton(
-                                onClick = { triggerVoiceInput() },
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .testTag("voice_input_button"),
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Mic,
-                                    contentDescription = "Use voice (Speech to text)",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
+                                Text(
+                                    text = agentKind.title,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                 )
                             }
-                            Spacer(Modifier.width(2.dp))
                         }
 
-                        if (isRunning) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.error,
-                                        shape = CircleShape,
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                        )
+
+                        // Main message input row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            var showUploadMenu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(
+                                    onClick = { showUploadMenu = true },
+                                    enabled = !isRunning && pendingAttachments.size < 5,
+                                    modifier = Modifier.size(42.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Upload",
+                                        modifier = Modifier.size(24.dp),
+                                        tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                    .clickable(onClick = onStop),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Stop,
-                                    contentDescription = "Stop AI task",
-                                    tint = MaterialTheme.colorScheme.onError,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(
-                                        color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                        shape = CircleShape,
-                                    )
-                                    .clickable(
-                                        enabled = canSend,
+                                }
+                                DropdownMenu(
+                                    expanded = showUploadMenu,
+                                    onDismissRequest = { showUploadMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Upload Files") },
                                         onClick = {
-                                            if (canSend) {
-                                                onSend(prompt)
-                                                prompt = ""
-                                            }
+                                            showUploadMenu = false
+                                            onAttach()
                                         },
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowUpward,
-                                    contentDescription = "Send",
-                                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(19.dp),
-                                )
+                                        leadingIcon = { Icon(Icons.Default.AttachFile, null) }
+                                    )
+                                    if (onCamera != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("Take Photo") },
+                                            onClick = {
+                                                showUploadMenu = false
+                                                onCamera()
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.PhotoCamera, null) }
+                                        )
+                                    }
+                                }
+                            }
+
+                            BasicTextField(
+                                value = prompt,
+                                onValueChange = { prompt = it },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 6.dp, vertical = 8.dp)
+                                    .heightIn(min = 44.dp, max = 180.dp),
+                                textStyle = TextStyle(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 16.sp,
+                                    lineHeight = 22.sp,
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                                decorationBox = { innerTextField ->
+                                    Box(contentAlignment = Alignment.CenterStart) {
+                                        if (prompt.isEmpty()) {
+                                            Text(
+                                                text = "Message ${agentKind.title}…",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 16.sp,
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                },
+                            )
+
+                            Spacer(Modifier.width(2.dp))
+
+                            if (!isRunning) {
+                                IconButton(
+                                    onClick = { triggerVoiceInput() },
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .testTag("voice_input_button"),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Mic,
+                                        contentDescription = "Use voice (Speech to text)",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                                Spacer(Modifier.width(2.dp))
+                            }
+
+                            if (isRunning) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.error,
+                                            shape = CircleShape,
+                                        )
+                                        .clickable(onClick = onStop),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Stop,
+                                        contentDescription = "Stop AI task",
+                                        tint = MaterialTheme.colorScheme.onError,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .background(
+                                            color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = CircleShape,
+                                        )
+                                        .clickable(
+                                            enabled = canSend,
+                                            onClick = {
+                                                if (canSend) {
+                                                    onSend(prompt)
+                                                    prompt = ""
+                                                }
+                                            },
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowUpward,
+                                        contentDescription = "Send",
+                                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(21.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -6631,7 +7329,7 @@ private fun MessageBubble(
         Surface(
             color = if (message.fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(18.dp),
-            modifier = Modifier.fillMaxWidth(if (message.fromUser) .82f else .92f),
+            modifier = Modifier.fillMaxWidth(if (message.fromUser) .88f else .98f),
         ) {
             Column(Modifier.padding(top = 12.dp)) {
                 SelectionContainer {
@@ -6639,7 +7337,7 @@ private fun MessageBubble(
                         Text(
                             text = message.text,
                             modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
-                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 23.sp),
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     } else {

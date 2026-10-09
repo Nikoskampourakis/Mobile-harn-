@@ -447,6 +447,13 @@ class AppPreferences(private val context: Context) {
         return loadLegacyMessages(file)
     }
 
+    fun deleteChat(projectId: String, chatId: String) {
+        val projectDir = File(chatsDir, projectId)
+        File(projectDir, "$chatId.json").delete()
+        val remainingChats = loadProjectChats(projectId).filterNot { it.id == chatId }
+        saveProjectChats(projectId, remainingChats)
+    }
+
     fun deleteProjectChats(projectId: String) {
         File(chatsDir, projectId).deleteRecursively()
         File(chatsDir, "$projectId.json").delete()

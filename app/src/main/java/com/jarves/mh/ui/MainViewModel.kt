@@ -2881,6 +2881,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteChat(projectId: String, chatId: String) {
+        if (_state.value.isRunning) return
+        preferences.deleteChat(projectId, chatId)
+        val remaining = preferences.loadProjectChats(projectId).ifEmpty {
+            val fallback = ProjectChat(title = "New chat")
+            preferences.saveProjectChats(projectId, listOf(fallback))
+            listOf(fallback)
+        }
+        if (_state.value.activeProject?.id == projectId) {
+            val newActiveChatId = if (_state.value.activeChatId == chatId) remaining.first().id else _state.value.activeChatId
+            val messages = if (_state.value.activeChatId == chatId) {
+                preferences.loadMessages(projectId, newActiveChatId ?: "").ifEmpty {
+                    listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."))
+                }
+            } else {
+                _state.value.messages
+            }
+            _state.update {
+                it.copy(
+                    projectChats = remaining,
+                    activeChatId = newActiveChatId,
+                    messages = messages,
+                )
+            }
+        }
+    }
+
     private fun renameProjectIfDefault(projectId: String, context: String) {
         val current = _state.value
         val project = current.projects.firstOrNull { it.id == projectId } ?: return
